@@ -310,34 +310,62 @@ public class MinecraftInstance {
 
         AffinityManager.jumpPlayingAffinity(this); // Affinity Jump (BRAND NEW TECH POGGERS)
         ActiveWindowManager.activateHwnd(this.hwnd);
-        if (!doingSetup && (!options.autoFullscreen || options.usePlayingSizeWithFullscreen)) {
-            this.ensurePlayingWindowState(false);
-        }
 
-        if (this.stateTracker.isCurrentState(InstanceState.INWORLD)) {
-            if (!doingSetup) {
-                if (options.autoFullscreen && options.fullscreenBeforeUnpause) {
-                    this.presser.pressKey(this.gameOptions.fullscreenKey);
-                    this.waitForFullscreen();
-                    this.windowStateDirty = true;
-                }
-                if ((options.unpauseOnSwitch || options.coopMode)) {
-                    this.presser.pressEsc();
-                    this.presser.pressEsc();
-                    this.presser.pressEsc();
-                    if (this.gameOptions.f1SS) {
-                        this.presser.pressF1();
+        if (options.autoFullscreen) {
+            if (!doingSetup && options.usePlayingSizeWithFullscreen) {
+                this.ensurePlayingWindowState(false);
+            }
+
+            if (this.stateTracker.isCurrentState(InstanceState.INWORLD)) {
+                if (!doingSetup) {
+                    if (options.fullscreenBeforeUnpause) {
+                        this.presser.pressKey(this.gameOptions.fullscreenKey);
+                        this.waitForFullscreen();
+                        this.windowStateDirty = true;
+                    }
+                    if ((options.unpauseOnSwitch || options.coopMode)) {
+                        this.presser.pressEsc();
+//                    this.presser.pressEsc();
+//                    this.presser.pressEsc();
+                        if (this.gameOptions.f1SS) {
+                            this.presser.pressF1();
+                        }
+                    }
+                    if (options.coopMode) {
+                        this.openToLan(true, options.coopModeCheats);
+                    }
+                    if (!options.fullscreenBeforeUnpause) {
+                        this.presser.pressKey(this.gameOptions.fullscreenKey);
+                        this.windowStateDirty = true;
                     }
                 }
-                if (options.coopMode) {
-                    this.openToLan(true, options.coopModeCheats);
-                }
-                if (options.autoFullscreen && !options.fullscreenBeforeUnpause) {
-                    this.presser.pressKey(this.gameOptions.fullscreenKey);
-                    this.windowStateDirty = true;
+            }
+        } else {
+            if (!doingSetup && options.fullscreenBeforeUnpause) {
+                this.ensurePlayingWindowState(false);
+            }
+
+            if (this.stateTracker.isCurrentState(InstanceState.INWORLD)) {
+                if (!doingSetup) {
+                    if ((options.unpauseOnSwitch || options.coopMode)) {
+                        this.presser.pressEsc();
+//                    this.presser.pressEsc();
+//                    this.presser.pressEsc();
+                        if (this.gameOptions.f1SS) {
+                            this.presser.pressF1();
+                        }
+                    }
+                    if (options.coopMode) {
+                        this.openToLan(true, options.coopModeCheats);
+                    }
                 }
             }
+
+            if (!doingSetup && !options.fullscreenBeforeUnpause) {
+                this.ensurePlayingWindowState(false);
+            }
         }
+
         if (doingSetup) {
             this.ensureInitialWindowState(true);
         } else {
@@ -640,7 +668,7 @@ public class MinecraftInstance {
         if (currentlyMaximized) {
             if (maximize) {
                 // If its currently maximized and staying maximized, return
-                return;
+                // return;
             } else {
                 // If its currently maximized but not staying maximized, restore and continue to window size
                 WindowStateUtil.restoreHwnd(this.hwnd);
@@ -733,8 +761,12 @@ public class MinecraftInstance {
         if (!skipUnpauseCheck) {
             this.getToUnpausedState();
         }
-        this.presser.pressKey(this.gameOptions.chatKey);
+
+        // this.presser.pressKey(this.gameOptions.chatKey);
+        this.presser.pressKey(0xBF);
+
         sleep(100);
+        this.presser.pressKey(8);
         for (char c : chatMessage.toCharArray()) {
             KeyboardUtil.sendCharToHwnd(this.hwnd, c);
         }
