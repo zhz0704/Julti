@@ -22,6 +22,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 
 public class OptionsGUI extends JFrame {
@@ -44,11 +45,14 @@ public class OptionsGUI extends JFrame {
         if (instance == null || instance.isClosed()) {
             instance = new OptionsGUI();
         }
+        instance.setExtendedState(NORMAL);
+        instance.requestFocus();
         return instance;
     }
 
     private static void changeProfile(String profile) {
         Julti.waitForExecute(() -> Julti.getJulti().changeProfile(profile));
+        JultiGUI.getJultiGUI().getInstancesPanel().utilityCheckBox.setSelected(JultiOptions.getJultiOptions().utilityMode);
     }
 
     public static void reloadIfOpen() {
@@ -105,11 +109,6 @@ public class OptionsGUI extends JFrame {
         JultiOptions options = JultiOptions.getJultiOptions();
 
         panel.add(GUIUtil.leftJustify(new JLabel("Experimental Settings")));
-        panel.add(GUIUtil.createSpacer());
-        panel.add(GUIUtil.createSeparator());
-
-        panel.add(GUIUtil.createSpacer());
-        panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Utility Mode", "utilityMode")));
 
         panel.add(GUIUtil.createSpacer());
         panel.add(GUIUtil.createSeparator());
@@ -158,6 +157,21 @@ public class OptionsGUI extends JFrame {
         panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Resizeable Borderless", "Allows the window to be resized, restored and maximized when Use Borderless is checked.", "resizeableBorderless", b -> this.reload())));
 
         panel.add(GUIUtil.createSpacer());
+        panel.add(GUIUtil.createSeparator());
+
+        panel.add(GUIUtil.createSpacer());
+        panel.add(GUIUtil.leftJustify(new JLabel("ColorMC Executable Path (.exe):")));
+        panel.add(GUIUtil.createSpacer());
+
+        panel.add(GUIUtil.leftJustify(GUIUtil.createValueChangerButton("colorMCPath", "ColorMC Executable Path", this)));
+        panel.add(GUIUtil.createSpacer());
+
+        panel.add(GUIUtil.leftJustify(GUIUtil.getButtonWithMethod(new JButton("Auto-detect..."), actionEvent -> {
+            this.runLauncherExecutableHelper(MinecraftInstance.InstanceType.ColorMC);
+            this.reload();
+        })));
+        panel.add(GUIUtil.createSpacer());
+
         panel.add(GUIUtil.createSeparator());
 
         panel.add(GUIUtil.createSpacer());
@@ -338,6 +352,20 @@ public class OptionsGUI extends JFrame {
         panel.add(GUIUtil.leftJustify(new JLabel("Other Settings")));
         panel.add(GUIUtil.createSpacer());
         panel.add(GUIUtil.createSeparator());
+
+        panel.add(GUIUtil.createSpacer());
+        panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Utility Mode", "utilityMode", b -> {
+            this.reload();
+            JultiGUI.getJultiGUI().getInstancesPanel().utilityCheckBox.setSelected(b);
+        })));
+
+        if (options.utilityMode) {
+            panel.add(GUIUtil.createSpacer());
+            panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Allow Resets In Utility", "utilityModeAllowResets")));
+        }
+
+        panel.add(GUIUtil.createSpacer());
+        panel.add(GUIUtil.createSeparator());
         panel.add(GUIUtil.createSpacer());
 
         panel.add(GUIUtil.leftJustify(GUIUtil.createValueChangerButton("resetCounter", "Reset Counter", this, "", ResetCounter::updateFiles)));
@@ -353,7 +381,7 @@ public class OptionsGUI extends JFrame {
         panel.add(GUIUtil.createSpacer());
 
         panel.add(GUIUtil.leftJustify(GUIUtil.getButtonWithMethod(new JButton("Auto-detect..."), actionEvent -> {
-            this.runMMCExecutableHelper();
+            this.runLauncherExecutableHelper(MinecraftInstance.InstanceType.MultiMC);
             this.reload();
         })));
         panel.add(GUIUtil.createSpacer());
@@ -372,7 +400,17 @@ public class OptionsGUI extends JFrame {
         panel.add(GUIUtil.createSeparator());
         panel.add(GUIUtil.createSpacer());
 
+        panel.add(GUIUtil.createSeparator());
+        panel.add(GUIUtil.createSpacer());
+
         panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Minimize Julti To System Tray", "Minimizing Julti will move it to an icon in the system tray (bottom right).", "minimizeToTray", JultiGUI.getJultiGUI().getJultiIcon()::setTrayIconListener)));
+        panel.add(GUIUtil.createSpacer());
+
+        panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Enable Pre-Release Updates", "Update checking will also check for pre-releases. Checking this box will trigger an update check.", "usePreReleases", b -> {
+            if (b) {
+                new Thread(() -> UpdateUtil.tryCheckForUpdates(JultiGUI.getJultiGUI()), "update-checker").start();
+            }
+        })));
         panel.add(GUIUtil.createSpacer());
 
         panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Enable Experimental Options", "enableExperimentalOptions", b -> {
@@ -388,15 +426,15 @@ public class OptionsGUI extends JFrame {
                     options.useAltSwitching = false;
                     options.allowResetDuringGenerating = false;
                     options.resizeableBorderless = false;
-                    options.utilityMode = false;
                 });
             }
             this.reload();
         })));
     }
 
-    private void runMMCExecutableHelper() {
-        List<String> appNames = Arrays.asList("multimc.exe,prismlauncher.exe".split(","));
+    private void runLauncherExecutableHelper(MinecraftInstance.InstanceType type) {
+        List<String> appNames = type == MinecraftInstance.InstanceType.MultiMC ? Arrays.asList("multimc.exe,prismlauncher.exe".split(","))
+                : Collections.singletonList("ColorMC.Launcher.exe");
         List<Path> possibleLocations = new ArrayList<>();
         Path userHome = Paths.get(System.getProperty("user.home"));
         possibleLocations.add(userHome.resolve("Desktop"));
@@ -432,9 +470,10 @@ public class OptionsGUI extends JFrame {
                 }
             }
         }
-        if (candidates.size() == 0) {
-            if (0 == JOptionPane.showConfirmDialog(this, "Could not automatically find any candidates, browse for exe instead?", "Julti: Choose MultiMC Executable", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)) {
-                this.browseForMMCExecutable();
+        if (candidates.isEmpty()) {
+            if (0 == JOptionPane.showConfirmDialog(this, "Could not automatically find any candidates, browse for exe instead?",
+                    "Julti: Choose " + (type == MinecraftInstance.InstanceType.MultiMC ? "MultiMC" : "ColorMC") + " Executable", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE)) {
+                this.browseForLauncherExecutable(type);
             }
             return;
         }
@@ -448,29 +487,38 @@ public class OptionsGUI extends JFrame {
         }
         options[candidates.size()] = "Browse...";
         // The ans int will be the index of the candidate, or one larger than any possible index to indicate browsing.
-        int ans = JOptionPane.showOptionDialog(this, message.toString(), "Julti: Choose MultiMC Executable", JOptionPane.CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, null);
+        int ans = JOptionPane.showOptionDialog(this, message.toString(), "Julti: Choose " + (type == MinecraftInstance.InstanceType.MultiMC ? "MultiMC" : "ColorMC")
+                + " Executable", JOptionPane.CANCEL_OPTION, JOptionPane.QUESTION_MESSAGE, null, options, null);
         if (ans == -1) {
             return;
         }
         if (ans == candidates.size()) {
-            this.browseForMMCExecutable();
+            this.browseForLauncherExecutable(type);
         } else {
             Path chosen = candidates.get(ans);
-            JultiOptions.getJultiOptions().multiMCPath = chosen.toString();
+            if (type == MinecraftInstance.InstanceType.MultiMC) {
+                JultiOptions.getJultiOptions().multiMCPath = chosen.toString();
+            } else {
+                JultiOptions.getJultiOptions().colorMCPath = chosen.toString();
+            }
         }
     }
 
-    private void browseForMMCExecutable() {
+    private void browseForLauncherExecutable(MinecraftInstance.InstanceType type) {
         JFileChooser jfc = new JFileChooser();
         jfc.setFileSelectionMode(JFileChooser.FILES_ONLY);
-        jfc.setDialogTitle("Julti: Choose MultiMC Executable");
+        jfc.setDialogTitle("Julti: Choose " + (type == MinecraftInstance.InstanceType.MultiMC ? "MultiMC" : "ColorMC") + " Executable");
         jfc.setAcceptAllFileFilterUsed(false);
         jfc.addChoosableFileFilter(new FileNameExtensionFilter("Executables", "exe"));
 
         int val = jfc.showOpenDialog(this);
         if (val == JFileChooser.APPROVE_OPTION) {
 
-            JultiOptions.getJultiOptions().multiMCPath = jfc.getSelectedFile().toPath().toString();
+            if (type == MinecraftInstance.InstanceType.MultiMC) {
+                JultiOptions.getJultiOptions().multiMCPath = jfc.getSelectedFile().toPath().toString();
+            } else {
+                JultiOptions.getJultiOptions().colorMCPath = jfc.getSelectedFile().toPath().toString();
+            }
         }
     }
 
@@ -771,6 +819,13 @@ public class OptionsGUI extends JFrame {
         }
         panel.add(GUIUtil.createSpacer());
 
+        panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Use Playing Settings with Utility Mode", "utilityModeUsePlayingSettings", b -> this.reload())));
+        panel.add(GUIUtil.createSpacer());
+
+        if (options.utilityMode && !options.utilityModeUsePlayingSettings) {
+            return;
+        }
+
         panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Use Borderless", "useBorderless", b -> this.reload())));
         panel.add(GUIUtil.createSpacer());
 
@@ -778,8 +833,10 @@ public class OptionsGUI extends JFrame {
             panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Maximize When Playing", "maximizeWhenPlaying", b -> this.reload())));
             panel.add(GUIUtil.createSpacer());
 
-            panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Maximize When Resetting", "maximizeWhenResetting", b -> this.reload())));
-            panel.add(GUIUtil.createSpacer());
+            if (!options.utilityMode) {
+                panel.add(GUIUtil.leftJustify(GUIUtil.createCheckBoxFromOption("Maximize When Resetting", "maximizeWhenResetting", b -> this.reload())));
+                panel.add(GUIUtil.createSpacer());
+            }
         }
 
         panel.add(GUIUtil.createSeparator());
@@ -904,10 +961,15 @@ public class OptionsGUI extends JFrame {
     private void onClose() {
         this.closed = true;
         Julti.doLater(() -> {
-            OBSStateManager.getOBSStateManager().tryOutputLSInfo();
+            JultiOptions options = JultiOptions.getJultiOptions();
+            if (!options.utilityMode) {
+                OBSStateManager.getOBSStateManager().tryOutputLSInfo();
+                MistakesUtil.checkStartupMistakes();
+            }
             SleepBGUtil.disableLock();
-            MistakesUtil.checkStartupMistakes();
-            DoAllFastUtil.doAllFast(minecraftInstance -> minecraftInstance.ensureResettingWindowState(false));
+            if (options.utilityModeUsePlayingSettings || !options.utilityMode) {
+                Julti.resetInstancePositions();
+            }
         });
     }
 }

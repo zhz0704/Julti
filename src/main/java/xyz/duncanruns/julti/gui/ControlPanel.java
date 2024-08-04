@@ -14,6 +14,8 @@ import java.awt.event.ActionEvent;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
 
 import static xyz.duncanruns.julti.Julti.log;
 
@@ -87,8 +89,7 @@ public class ControlPanel extends JPanel {
                 public void actionPerformed(ActionEvent e) {
                     Thread.currentThread().setName("julti-gui");
                     SleepBGUtil.disableLock();
-                    // ensure instance is unfullscreened and unminimized
-                    Julti.doLater(() -> DoAllFastUtil.doAllFast(minecraftInstance -> minecraftInstance.ensureInitialWindowState()));
+                    Julti.doLater(Julti::resetInstancePositions);
                 }
             });
 
@@ -122,16 +123,33 @@ public class ControlPanel extends JPanel {
                 @Override
                 public void actionPerformed(ActionEvent e) {
                     Thread.currentThread().setName("julti-gui");
-                    List<MinecraftInstance> instances = InstanceManager.getInstanceManager().getInstances();
-                    int ans = JOptionPane.showConfirmDialog(thisComponent, "Copy mods and config from " + instances.get(0) + " to all other instances?", "Julti: Sync Instances", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
-                    if (ans == 0) {
-                        new Thread(() -> {
-                            try {
-                                SyncUtil.sync(instances, instances.get(0), true, true, true);
-                            } catch (IOException er) {
-                                log(Level.ERROR, "Failed to copy files:\n" + er);
-                            }
-                        }, "instance-sync").start();
+                    if (InstanceManager.getInstanceManager().getInstances().size() < 2) {
+                        Julti.log(Level.ERROR, "Can't sync instances with less than 2 instances!");
+                        return;
+                    }
+                    Optional<Set<SyncUtil.SyncOptions>> ans = SyncUtil.ask();
+                    if (!ans.isPresent()) {
+                        return;
+                    }
+                    new Thread(() -> {
+                        try {
+                            List<MinecraftInstance> instances = InstanceManager.getInstanceManager().getInstances();
+                            SyncUtil.sync(instances, instances.get(0), ans.get());
+                        } catch (IOException er) {
+                            log(Level.ERROR, "Failed to copy files:\n" + ExceptionUtil.toDetailedString(er));
+                        }
+                    }, "instance-sync").start();
+
+                }
+            });
+
+            GUIUtil.addMenuItem(menu, "Open .Julti", new AbstractAction() {
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    try {
+                        Desktop.getDesktop().browse(JultiOptions.getJultiDir().toAbsolutePath().toUri());
+                    } catch (IOException ex) {
+                        Julti.log(Level.ERROR, "Failed to open .Julti folder:\n" + ExceptionUtil.toDetailedString(ex));
                     }
                 }
             });

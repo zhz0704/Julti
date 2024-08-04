@@ -1,4 +1,49 @@
-Changes in v1.4.2:
+Changes in v1.5.0:
+- More support for old versions (1.7.10 was looked at specifically) (#107 @tildejustin)
+- Support for ColorMC launcher (A chinese launcher) (#108 @Coloryr)
+  - ColorMC exe is in experimental options 
+- Utility Mode is now moved to other options, as well as a button on the main GUI
+- Added a new utility mode option in window settings to apply playing window settings when using utility mode
+- Window title will now automatically set in utility mode, allowing for a Julti OBS setup to capture the game easier
+- More support for SeedQueue
+- Various other tweaks/fixes
+
+Changes in v1.4.7:
+- Fix inverted warning message
+
+Changes in v1.4.7:
+- Fix internet things for old Java 8 (maybe)
+- Fix Use F3 option for old versions
+  - Btw 1.7.10 should fully work at this point (I recommend dirt covers and no fullscreen) 
+- Update PaceMan Tracker for multi version support (stay tuned)
+- Implement rolling log and add "Open .Julti" button (#103 @marin774)
+- Log will now jump to the bottom when Julti window is unfocused (maybe idk its janky)
+- Various other tweaks/fixes
+
+Changes in v1.4.6:
+- Greatly Improved Sync Instances 
+  - (was going to be in 1.5.0, but I want to push some other things out)
+- Improved Update Suggestions:
+  - You can now check "Enable Pre-Release Updates" to always get notified for a pre-release update, even if you are on a main update. 
+- Avoided the GitHub API in some places, making it easier to avoid the 60 requests per hour limit.
+  - Official Scripts no longer requires GitHub API
+  - Julti update checking no longer requires GitHub API
+  - Checking what mods are legal no longer requires GitHub API (thanks justin)
+- Launching instance(s) with MultiMC/Prism Launcher closed should be less likely to crash. (I changed the way Julti initially opens it)
+- Various other tweaks/fixes
+
+Changes in v1.4.5:
+- Fix Julti crashing when closing the options GUI when any instances are closed.
+
+Changes in v1.4.4:
+- Fix GUIs not refocusing if already open
+- A few utility mode changes (#100 @dfanm)
+  - Add "Allow Resets In Utility" option
+  - The "Reset Instance Positions" button and closing the options menu will now set instances to their playing size if Utility Mode is enabled.
+- Fixed an issue where a "ghost instance" could exist in locked instances
+- Added more lua functionality
+
+Changes in v1.4.3:
 - Fixed an issue where a wall hotkey set to the same key as "reset" would trigger both actions when returning to wall.
 - Updated standard manager to be less annoying for single instance and utility mode users (also puts the julti logo in there).
 

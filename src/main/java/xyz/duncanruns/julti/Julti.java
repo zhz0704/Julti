@@ -8,9 +8,11 @@ import org.apache.commons.lang3.tuple.Pair;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.config.Configurator;
 import xyz.duncanruns.julti.affinity.AffinityManager;
 import xyz.duncanruns.julti.gui.JultiGUI;
 import xyz.duncanruns.julti.hotkey.HotkeyManager;
+import xyz.duncanruns.julti.instance.InstanceState;
 import xyz.duncanruns.julti.instance.MinecraftInstance;
 import xyz.duncanruns.julti.management.ActiveWindowManager;
 import xyz.duncanruns.julti.management.InstanceManager;
@@ -77,6 +79,7 @@ public final class Julti {
     }
 
     public static void log(Level level, String message) {
+        Configurator.setRootLevel(JultiOptions.getJultiOptions().showDebug ? Level.DEBUG : Level.INFO); // whether to write debug logs to latest.log (info is default)
         LOGGER.log(level, message);
         LogReceiver.receive(level, message);
     }
@@ -128,6 +131,10 @@ public final class Julti {
         if (instance != null) {
             instance.getKeyPresser().pressKey(instance.getGameOptions().createWorldKey);
         }
+    }
+
+    public static void resetInstancePositions() {
+        InstanceManager.getInstanceManager().getInstances().stream().filter(MinecraftInstance::hasWindow).forEach(JultiOptions.getJultiOptions().utilityMode ? MinecraftInstance::ensurePlayingWindowState : MinecraftInstance::ensureInitialWindowState);
     }
 
     private void changeProfile(QMessage message) {
@@ -198,7 +205,9 @@ public final class Julti {
         // Schedule stuff for after Julti startup processes
         Julti.doLater(() -> {
             MistakesUtil.checkStartupMistakes();
-            new Thread(() -> UpdateUtil.tryCheckForUpdates(JultiGUI.getJultiGUI()), "update-checker").start();
+            if (!JultiAppLaunch.launchedWithDevPlugin) {
+                new Thread(() -> UpdateUtil.tryCheckForUpdates(JultiGUI.getJultiGUI()), "update-checker").start();
+            }
         });
 
         while (this.running) {
@@ -231,7 +240,7 @@ public final class Julti {
         MinecraftInstance selectedInstance = InstanceManager.getInstanceManager().getSelectedInstance();
         boolean instanceActive = selectedInstance != null;
         boolean wallActive = !instanceActive && ActiveWindowManager.isWallActive();
-        if (wallActive) {
+        if (wallActive || (instanceActive && selectedInstance.getStateTracker().isCurrentState(InstanceState.WALL))) {
             OBSStateManager.getOBSStateManager().setLocationToWall();
         } else if (instanceActive) {
             OBSStateManager.getOBSStateManager().setLocation(InstanceManager.getInstanceManager().getInstanceNum(selectedInstance));
@@ -307,11 +316,10 @@ public final class Julti {
         } else if (hotkeyCode.equals("cancelScript")) {
             ScriptManager.cancelAllScripts();
         } else {
-            if (!JultiOptions.getJultiOptions().utilityMode) {
+            JultiOptions options = JultiOptions.getJultiOptions();
+            if (!options.utilityMode) {
                 ResetHelper.run(hotkeyCode, mousePosition);
-                return;
-            }
-            if (hotkeyCode.equals("reset")) {
+            } else if (options.utilityModeAllowResets && hotkeyCode.equals("reset")) {
                 runUtilityModeReset();
             }
         }

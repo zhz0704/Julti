@@ -1,5 +1,8 @@
 package xyz.duncanruns.julti.instance;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import com.sun.jna.platform.win32.WinDef;
 import com.sun.jna.platform.win32.WinDef.HWND;
 import org.apache.commons.text.StringEscapeUtils;
@@ -35,6 +38,7 @@ public class MinecraftInstance {
     private int pid;
     private final Path path;
     private final String versionString;
+    private final InstanceType instanceType;
 
     // Discoverable Information
     private GameOptions gameOptions = null;
@@ -55,9 +59,10 @@ public class MinecraftInstance {
 
     private long lastActivation = 0L;
 
-    public MinecraftInstance(HWND hwnd, Path path, String versionString) {
+    public MinecraftInstance(HWND hwnd, Path path, String versionString, InstanceType instanceType) {
         this.hwnd = hwnd;
         this.path = path;
+        this.instanceType = instanceType;
         this.versionString = versionString;
         this.stateTracker = new StateTracker(path.resolve("wpstateout.txt"), this::onStateChange, this::onPercentageUpdate);
         this.presser = new KeyPresser(hwnd);
@@ -66,13 +71,51 @@ public class MinecraftInstance {
 
     public MinecraftInstance(Path path) {
         this.hwnd = null;
-        this.versionString = null;
+        this.versionString = tryObtainVersionString(path);
         this.presser = null;
         this.scheduler = null;
+        this.instanceType = obtainClosedInstanceType(path);
         this.stateTracker = new StateTracker(path.resolve("wpstateout.txt"), null, null);
 
         this.path = path;
         this.windowMissing = true;
+    }
+
+    private static String tryObtainVersionString(Path path) {
+        try {
+            return obtainVersionString(path);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static String obtainVersionString(Path path) throws IOException {
+        Path mmcPackPath = path.resolveSibling("mmc-pack.json");
+        if (!Files.isRegularFile(mmcPackPath)) {
+            return null;
+        }
+        String contents = FileUtil.readString(mmcPackPath);
+        JsonObject json = new Gson().fromJson(contents, JsonObject.class);
+        if (!json.has("components")) {
+            return null;
+        }
+        for (JsonElement element : json.getAsJsonArray("components")) {
+            JsonObject object = element.getAsJsonObject();
+            if (object.has("uid") && object.has("version") && object.get("uid").getAsString().equals("net.minecraft")) {
+                return object.get("version").getAsString();
+            }
+        }
+        return null;
+    }
+
+    private static InstanceType obtainClosedInstanceType(Path path) {
+        if (Files.isRegularFile(path.resolveSibling("instance.cfg"))) {
+            return InstanceType.MultiMC;
+        }
+        if (Files.isRegularFile(path.resolve("game.json"))) {
+            return InstanceType.ColorMC;
+        }
+        return InstanceType.Vanilla;
     }
 
     public void tick() {
@@ -172,7 +215,7 @@ public class MinecraftInstance {
         }
 
         if (!hasStateOutput) {
-            Julti.log(Level.WARN, "Warning: Instance \"" + this + "\" does not have an updated version of world preview or the state output mod and will likely not function!");
+            Julti.log(Level.WARN, "Warning: Instance \"" + this + "\" does not have the state output mod and will likely not function!");
         }
 
         boolean hasSS = FabricJarUtil.getJarInfo(this.gameOptions.jars, "standardsettings") != null;
@@ -204,36 +247,48 @@ public class MinecraftInstance {
         // Check MultiMC/Prism name
         if (this.usesMultiMC()) {
             try {
-                Path mmcConfigPath = instancePath.getParent().resolve("instance.cfg");
+                Path mmcConfigPath = instancePath.resolveSibling("instance.cfg");
                 for (String line : Files.readAllLines(mmcConfigPath)) {
                     line = line.trim();
                     if (line.startsWith("name=")) {
                         this.name = StringEscapeUtils.unescapeJson(line.split("=")[1]);
+                        return;
                     }
                 }
             } catch (Exception ignored) {
                 // Failed to check if it uses MultiMC, ignore and move on to taking folder name
             }
         }
+        // Check ColorMC
+        else if (this.usesColorMC()) {
+            try {
+                String contents = FileUtil.readString(instancePath.resolveSibling("game.json"));
+                JsonObject json = new Gson().fromJson(contents, JsonObject.class);
+                if (json.has("Name")) {
+                    this.name = json.get("Name").getAsString();
+                    return;
+                }
+            } catch (Exception ignored) {
+                // Failed to check if it uses ColorMC, ignore and move on to taking folder name
+            }
+        }
 
-        if (instancePath.getName(instancePath.getNameCount() - 1).toString().equals(".minecraft")) {
-            instancePath = instancePath.getParent();
-            // If this runs, instancePath is no longer an accurate variable name, and describes the parent path
+        this.name = instancePath.getFileName().toString();
+        if (this.name.equals(".minecraft") || this.name.equals("minecraft")) {
+            this.name = "Unnamed Instance";
         }
-        String name = instancePath.getName(instancePath.getNameCount() - 1).toString();
-        if (name.equals("Roaming")) {
-            name = "Default Launcher";
-        }
-        this.name = name;
     }
 
     private boolean usesMultiMC() {
         return Files.exists(this.getPath().getParent().resolve("instance.cfg"));
     }
 
+    private boolean usesColorMC() {
+        return Files.exists(this.getPath().getParent().resolve("game.json"));
+    }
 
     public MinecraftInstance createLazyCopy() {
-        return new MinecraftInstance(this.getHwnd(), this.getPath(), this.getVersionString());
+        return new MinecraftInstance(this.getHwnd(), this.getPath(), this.getVersionString(), this.getInstanceType());
     }
 
     public HWND getHwnd() {
@@ -252,21 +307,17 @@ public class MinecraftInstance {
         return this.versionString;
     }
 
+    public InstanceType getInstanceType() {
+        return this.instanceType;
+    }
+
     public void reset() {
         this.scheduler.clear();
         // Press Reset Keys
-        if (this.stateTracker.isCurrentState(InstanceState.TITLE)) {
-            if (MCVersionUtil.isOlderThan(this.versionString, "1.9")) {
-                this.presser.pressKey(this.gameOptions.createWorldKey); // Thanks pix
-            } else if (this.versionString.equals("1.17.1") || MCVersionUtil.isOlderThan(this.versionString, "1.16")) {
-                this.presser.pressShiftTabEnter();
-            } else {
-                this.presser.pressKey(this.gameOptions.createWorldKey);
-            }
-        } else {
+        if (!this.stateTracker.isCurrentState(InstanceState.TITLE)) {
             this.presser.pressKey(this.gameOptions.leavePreviewKey);
-            this.presser.pressKey(this.gameOptions.createWorldKey);
         }
+        this.presser.pressKey(this.gameOptions.createWorldKey);
 
         // Set values
         this.resetPressed = true;
@@ -406,18 +457,23 @@ public class MinecraftInstance {
     }
 
     private void onWorldLoad(boolean bypassPieChartGate) {
+        this.openedToLan = false;
         this.scheduler.clear();
         JultiOptions options = JultiOptions.getJultiOptions();
 
         boolean instanceCanPauseItself = this.gameOptions.pauseOnLostFocus || this.gameOptions.f3PauseOnWorldLoad;
+        boolean shouldF3Pause = this.shouldF3Pause();
 
         // Warnings
         if (this.gameOptions.pauseOnLostFocus && this.gameOptions.f3PauseOnWorldLoad) {
             Julti.log(Level.WARN, "Instance " + this + " has pauseOnLostFocus and f3PauseOnWorldLoad enabled at the same time! Setting pauseOnLostFocus to false is recommended.");
-        } else if (options.useF3 && this.gameOptions.pauseOnLostFocus) {
-            Julti.log(Level.WARN, "Instance " + this + " has pauseOnLostFocus enabled while Julti has \"Use F3\" enabled, so instances will not pause with f3 pausing. Setting pauseOnLostFocus to false is recommended.");
-        } else if (!options.useF3 && this.gameOptions.f3PauseOnWorldLoad) {
-            Julti.log(Level.WARN, "Instance " + this + " has f3PauseOnWorldLoad enabled while Julti has \"Use F3\" disabled, so instances will pause with f3 pausing. Setting f3PauseOnWorldLoad to false is recommended.");
+        } else {
+            boolean useF3 = options.useF3;
+            if (useF3 && this.gameOptions.pauseOnLostFocus) {
+                Julti.log(Level.WARN, "Instance " + this + " has pauseOnLostFocus enabled while Julti has \"Use F3\" enabled, so instances will not pause with f3 pausing. Setting pauseOnLostFocus to false is recommended.");
+            } else if (!useF3 && this.gameOptions.f3PauseOnWorldLoad) {
+                Julti.log(Level.WARN, "Instance " + this + " has f3PauseOnWorldLoad enabled while Julti has \"Use F3\" disabled, so instances will pause with f3 pausing. Setting f3PauseOnWorldLoad to false is recommended.");
+            }
         }
 
         if (instanceCanPauseItself && options.pieChartOnLoad) {
@@ -431,7 +487,7 @@ public class MinecraftInstance {
             return;
         }
 
-        int toPress = options.useF3 ? 2 : 1;
+        int toPress = shouldF3Pause ? 2 : 1;
 
         if (ActiveWindowManager.isWindowActive(this.hwnd)) {
             this.activeSinceReset = true;
@@ -469,10 +525,14 @@ public class MinecraftInstance {
         ResetHelper.getManager().notifyWorldLoaded(this);
     }
 
+    private boolean shouldF3Pause() {
+        return MCVersionUtil.isNewerThan(this.versionString, "1.14") && JultiOptions.getJultiOptions().useF3;
+    }
+
     private void onPreviewLoad() {
         this.scheduler.clear();
         this.openedToLan = false;
-        if (JultiOptions.getJultiOptions().useF3 && !this.gameOptions.f3PauseOnWorldLoad) {
+        if (this.shouldF3Pause() && !this.gameOptions.f3PauseOnWorldLoad) {
             this.scheduler.schedule(this.presser::pressF3Esc, 50);
         }
         ResetHelper.getManager().notifyPreviewLoaded(this);
@@ -560,22 +620,43 @@ public class MinecraftInstance {
         return this.path.getName(this.path.getNameCount() - 2).toString();
     }
 
+    public String getColorMCUUID() throws IOException {
+        String contents = FileUtil.readString(this.path.resolveSibling("game.json"));
+        JsonObject json = new Gson().fromJson(contents, JsonObject.class);
+        if (json.has("UUID")) {
+            return json.get("UUID").getAsString();
+        }
+        return null;
+    }
+
     public void launch(String offlineName) {
         this.ensureLaunchable();
-        try {
-            String multiMCPath = JultiOptions.getJultiOptions().multiMCPath;
-            if (!multiMCPath.isEmpty()) {
-                String[] cmd;
-                if (offlineName == null) {
-                    cmd = new String[]{multiMCPath.trim(), "--launch", this.getMMCInstanceFolderName()};
-                } else {
-                    cmd = new String[]{multiMCPath.trim(), "--launch", this.getMMCInstanceFolderName(), "-o", "-n", offlineName};
+        if (this.instanceType == InstanceType.MultiMC) {
+            try {
+                String multiMCPath = JultiOptions.getJultiOptions().multiMCPath;
+                if (!multiMCPath.isEmpty()) {
+                    String[] cmd;
+                    if (offlineName == null) {
+                        cmd = new String[]{multiMCPath.trim(), "--launch", this.getMMCInstanceFolderName()};
+                    } else {
+                        cmd = new String[]{multiMCPath.trim(), "--launch", this.getMMCInstanceFolderName(), "-o", "-n", offlineName};
+                    }
+                    Runtime.getRuntime().exec(cmd);
                 }
-                Runtime.getRuntime().exec(cmd);
-
+            } catch (IOException e) {
+                throw new RuntimeException(e);
             }
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+        } else if (this.instanceType == InstanceType.ColorMC) {
+            try {
+                String colorMCPath = JultiOptions.getJultiOptions().colorMCPath;
+                if (!colorMCPath.isEmpty()) {
+                    String[] cmd;
+                    cmd = new String[]{colorMCPath.trim(), "-game", this.getColorMCUUID()};
+                    Runtime.getRuntime().exec(cmd);
+                }
+            } catch (IOException e) {
+                throw new RuntimeException(e);
+            }
         }
     }
 
@@ -709,6 +790,10 @@ public class MinecraftInstance {
         this.ensureNotFullscreen(canSkipFSCheck);
         User32.INSTANCE.ShowWindow(this.hwnd, User32.SW_NORMAL);
         Julti.doLater(() -> this.ensureResettingWindowState(false));
+    }
+
+    public void ensurePlayingWindowState() {
+        this.ensurePlayingWindowState(false);
     }
 
     public void ensurePlayingWindowState(boolean offload) {
@@ -882,5 +967,9 @@ public class MinecraftInstance {
         Julti.log(Level.INFO, "");
 
         KeyboardUtil.copyToClipboard(toCopy.toString());
+    }
+
+    public enum InstanceType {
+        Vanilla, MultiMC, ColorMC
     }
 }
