@@ -376,8 +376,6 @@ public class MinecraftInstance {
                     }
                     if ((options.unpauseOnSwitch || options.coopMode)) {
                         this.presser.pressEsc();
-//                    this.presser.pressEsc();
-//                    this.presser.pressEsc();
                         if (this.gameOptions.f1SS) {
                             this.presser.pressF1();
                         }
